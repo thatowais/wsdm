@@ -57,7 +57,7 @@ export default function About() {
                                 community-driven. You can inspect the code, contribute features, or even self-host your own instance.
                             </p>
                             <a
-                                href="https://github.com"
+                                href="https://github.com/thatowais/wsdm"
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"

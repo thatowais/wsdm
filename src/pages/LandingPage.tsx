@@ -220,7 +220,7 @@ export default function LandingPage({ onLogin, onGuestLogin }: LandingPageProps)
                   Transparent, community-driven, and free forever. Released under the GNU GPL license. Inspect the code, contribute, or host it yourself.
                 </p>
                 <a
-                  href="https://github.com"
+                  href="https://github.com/thatowais/wsdm"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 text-sm font-medium text-white hover:text-gray-300 transition-colors"

@@ -62,7 +62,7 @@ export default function Roadmap() {
                         I am NOT a programmer or quite frankly even know what im doing. If you're a developer, designer, or maker who wants to contribute, check out the project on GitHub.
                     </p>
                     <a
-                        href="https://github.com"
+                        href="https://github.com/thatowais/wsdm"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-2 px-6 py-3 bg-white text-black font-medium rounded-lg hover:bg-gray-100 transition-colors"
