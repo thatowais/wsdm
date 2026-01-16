@@ -95,6 +95,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
       setIsCreating(false);
     } catch (error) {
       console.error('Failed to save note:', error);
+      throw error;
     } finally {
       setIsSaving(false);
     }
@@ -118,6 +119,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
       }
     } catch (error) {
       console.error('Failed to convert note:', error);
+      throw error;
     } finally {
       setIsSaving(false);
     }
@@ -130,10 +132,12 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
       if (noteToUpdate) {
         const updatedNote = { ...noteToUpdate, ...updates, updatedAt: new Date() };
         await saveNote(updatedNote);
-        setEditingNote(null);
+        // Don't clear editing note on simple updates (autosave)
+        // setEditingNote(null); 
       }
     } catch (error) {
       console.error('Failed to update note:', error);
+      throw error;
     } finally {
       setIsSaving(false);
     }

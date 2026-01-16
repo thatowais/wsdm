@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { useState, useEffect, useCallback, forwardRef, useImperativeHandle, useRef } from 'react';
 import { X, Loader2, ChevronDown } from 'lucide-react';
 import { NoteType } from '../types/note';
 import RichTextEditor from './RichTextEditor';
@@ -71,15 +71,71 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(({
     });
   }, [content, extractMentions]);
 
-  const handleSave = () => {
-    if (!isValid || isSaving) return;
-    onSave({
-      type,
-      title,
-      content,
-      tags,
-      connections
-    });
+  // Auto-save Logic
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
+  const lastSavedData = useRef({ title, content, tags, type, connections });
+  const onSaveRef = useRef(onSave);
+
+  // Keep ref in sync with prop
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
+
+  // Check for changes and set unsaved status
+  useEffect(() => {
+    const currentData = { title, content, tags, type, connections };
+    const hasChanges = JSON.stringify(currentData) !== JSON.stringify(lastSavedData.current);
+
+    // Switch to unsaved if changed, unless currently saving [don't interrupt save]
+    // Also recovers from 'error' state once user types again
+    if (hasChanges && saveStatus !== 'unsaved' && saveStatus !== 'saving') {
+      setSaveStatus('unsaved');
+    }
+  }, [title, content, tags, type, connections, saveStatus]);
+
+  // Debounced Save
+  useEffect(() => {
+    if (saveStatus !== 'unsaved' || !isValid) return;
+
+    const timer = setTimeout(async () => {
+      setSaveStatus('saving');
+      try {
+        await onSaveRef.current({
+          type,
+          title,
+          content,
+          tags,
+          connections
+        });
+        lastSavedData.current = { title, content, tags, type, connections };
+        setSaveStatus('saved');
+      } catch (error) {
+        setSaveStatus('error');
+        console.error('Auto-save failed:', error);
+      }
+    }, 1000); // 1 second debounce
+
+    return () => clearTimeout(timer);
+  }, [title, content, tags, type, connections, isValid, saveStatus]); // removed onSave from deps
+
+  const handleSave = async () => {
+    // Manual trigger (cmd+enter or similar)
+    if (!isValid || saveStatus === 'saving') return;
+
+    setSaveStatus('saving');
+    try {
+      await onSave({
+        type,
+        title,
+        content,
+        tags,
+        connections
+      });
+      lastSavedData.current = { title, content, tags, type, connections };
+      setSaveStatus('saved');
+    } catch (error) {
+      setSaveStatus('error');
+    }
   };
 
   useImperativeHandle(ref, () => ({
@@ -90,7 +146,7 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
-      } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !isSaving && isValid) {
+      } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && isValid) {
         e.preventDefault();
         handleSave();
       }
@@ -98,190 +154,104 @@ const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, title, content, tags, type, connections, isSaving, isValid]);
+  }, [onClose, title, content, tags, type, connections, isValid, handleSave]);
 
   const handleNoteLink = useCallback((noteId: string) => {
     setConnections(prev => Array.from(new Set([...prev, noteId])));
   }, []);
 
+  const headerActions = (
+    <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 text-sm text-gray-500">
+        {saveStatus === 'saving' && (
+          <>
+            <Loader2 size={14} className="animate-spin" />
+            <span>Saving...</span>
+          </>
+        )}
+        {saveStatus === 'saved' && (
+          <span className="text-emerald-600">Saved</span>
+        )}
+        {saveStatus === 'unsaved' && (
+          <span className="text-amber-500">Saving...</span>
+        )}
+        {saveStatus === 'error' && (
+          <span className="text-red-500">Error saving</span>
+        )}
+      </div>
+
+      <div className="relative">
+        <button
+          onClick={() => setShowTypeMenu(!showTypeMenu)}
+          className="px-3 py-1.5 bg-white border border-gray-200 rounded-md text-sm focus:outline-none hover:bg-gray-50 flex items-center gap-2"
+        >
+          <div className={`w-2 h-2 rounded-md ${type === 'fleeting' ? 'bg-yellow-400' :
+            type === 'literature' ? 'bg-blue-400' :
+              'bg-green-400'
+            }`} />
+          {type.charAt(0).toUpperCase() + type.slice(1)} Note
+          <ChevronDown size={14} className="text-gray-400" />
+        </button>
+
+        {showTypeMenu && (
+          <div className="absolute top-full right-0 mt-1 w-48 bg-white border rounded-lg shadow-xl overflow-hidden z-20">
+            {(['fleeting', 'literature', 'permanent'] as NoteType[]).map((noteType) => (
+              <button
+                key={noteType}
+                onClick={() => {
+                  setType(noteType);
+                  setShowTypeMenu(false);
+                }}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+              >
+                <div className={`w-2 h-2 rounded-full ${noteType === 'fleeting' ? 'bg-yellow-400' :
+                  noteType === 'literature' ? 'bg-blue-400' :
+                    'bg-green-400'
+                  }`} />
+                {noteType.charAt(0).toUpperCase() + noteType.slice(1)} Note
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="h-full flex flex-col bg-white">
-      {/* Mobile Header */}
-      <div className="flex items-center justify-between h-16 px-4 bg-white border-b md:hidden">
-        <button
-          onClick={onClose}
-          className="p-2 -ml-2 text-gray-600 hover:text-gray-900"
-        >
-          <X size={24} />
-        </button>
-        <h1 className="text-xl font-['Instrument_Serif']">
-          {note ? 'Edit Note' : 'New Note'}
-        </h1>
-        <div className="w-10" /> {/* Spacer to center the title */}
-      </div>
 
-      {/* Desktop Header */}
-      <div className="hidden md:flex px-4 pt-4 pb-2 items-center justify-between">
-        <div className="flex-1">
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Untitled"
-            className="text-2xl font-medium w-full focus:outline-none font-['Instrument_Serif']"
-            disabled={isSaving}
-          />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <button
-              onClick={() => setShowTypeMenu(!showTypeMenu)}
-              className="px-3 py-1.5 bg-white border border-gray-200 rounded-md text-sm focus:outline-none hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              disabled={isSaving}
-            >
-              {type.charAt(0).toUpperCase() + type.slice(1)} Note
-              <ChevronDown size={16} className="text-gray-500" />
-            </button>
-
-            {showTypeMenu && (
-              <div className="absolute right-0 mt-1 w-48 bg-white border rounded-md shadow-lg z-50">
-                {(['fleeting', 'literature', 'permanent'] as NoteType[]).map((noteType) => (
-                  <button
-                    key={noteType}
-                    onClick={() => {
-                      setType(noteType);
-                      setShowTypeMenu(false);
-                    }}
-                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 first:rounded-t-md last:rounded-b-md"
-                  >
-                    {noteType.charAt(0).toUpperCase() + noteType.slice(1)} Note
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <button
-            onClick={handleSave}
-            disabled={!isValid || isSaving}
-            className={`
-              px-3 py-1.5 rounded-md text-sm flex items-center gap-2 transition-colors
-              ${isValid
-                ? 'bg-black text-white hover:bg-gray-900'
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-              }
-              disabled:opacity-50 disabled:cursor-not-allowed
-            `}
-          >
-            {isSaving ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                Save
-                <span className="hidden sm:inline text-xs text-gray-400">⌘↵</span>
-              </>
-            )}
-          </button>
-
-          <button
-            onClick={onClose}
-            disabled={isSaving}
-            className="p-1.5 text-gray-500 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <X size={20} />
-          </button>
-        </div>
-      </div>
-
-      {/* Mobile Title Input */}
-      <div className="px-4 py-2 md:hidden">
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Untitled"
-          className="text-2xl font-medium w-full focus:outline-none font-['Instrument_Serif']"
-          disabled={isSaving}
-        />
-      </div>
-
-      {/* Tags Input */}
-      <div className="px-4">
-        <TagInput
-          tags={tags}
-          suggestions={availableTags}
-          onChange={setTags}
-          disabled={isSaving}
-        />
-      </div>
-
-      {/* Editor */}
-      <div className="flex-1 overflow-auto">
+      {/* Main Content */}
+      <div className="flex-1 overflow-hidden">
         <RichTextEditor
           content={content}
           onChange={setContent}
           permanentNotes={permanentNotes}
           onNoteLink={handleNoteLink}
           placeholder="Start writing..."
-          disabled={isSaving}
-        />
-      </div>
-
-      {/* Mobile Bottom Bar */}
-      <div className="md:hidden flex items-center gap-2 p-4 border-t bg-white">
-        <div className="relative flex-1">
-          <button
-            onClick={() => setShowTypeMenu(!showTypeMenu)}
-            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-md text-sm focus:outline-none hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-between"
-            disabled={isSaving}
-          >
-            {type.charAt(0).toUpperCase() + type.slice(1)} Note
-            <ChevronDown size={16} className="text-gray-500" />
-          </button>
-
-          {showTypeMenu && (
-            <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border rounded-md shadow-lg">
-              {(['fleeting', 'literature', 'permanent'] as NoteType[]).map((noteType) => (
-                <button
-                  key={noteType}
-                  onClick={() => {
-                    setType(noteType);
-                    setShowTypeMenu(false);
-                  }}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 first:rounded-t-md last:rounded-b-md"
-                >
-                  {noteType.charAt(0).toUpperCase() + noteType.slice(1)} Note
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <button
-          onClick={handleSave}
-          disabled={!isValid || isSaving}
-          className={`
-            px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 min-w-[80px] justify-center
-            ${isValid
-              ? 'bg-black text-white hover:bg-gray-900'
-              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            }
-            disabled:opacity-50 disabled:cursor-not-allowed
-          `}
+          disabled={false}
+          headerActions={headerActions}
         >
-          {isSaving ? (
-            <>
-              <Loader2 size={16} className="animate-spin" />
-              Saving...
-            </>
-          ) : (
-            'Save'
-          )}
-        </button>
+          {/* Title Input */}
+          <div className="mb-4">
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Untitled"
+              className="text-4xl font-medium font-['Instrument_Serif'] w-full focus:outline-none placeholder:text-gray-300"
+            />
+          </div>
+
+          {/* Tags Input */}
+          <div className="mb-8">
+            <TagInput
+              tags={tags}
+              suggestions={availableTags}
+              onChange={setTags}
+              disabled={false}
+            />
+          </div>
+        </RichTextEditor>
       </div>
     </div>
   );
