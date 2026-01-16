@@ -27,3 +27,18 @@
   pointer-events: none;
   height: 0;
 }
+
+.ProseMirror ul li p,
+.ProseMirror ol li p {
+  line-height: 0.1;
+  margin: 0;
+}
+
+.ProseMirror p {
+  margin: 0;
+}
+
+.ProseMirror>*+* {
+  margin-top: 0.5em;
+  /* tweak */
+}
